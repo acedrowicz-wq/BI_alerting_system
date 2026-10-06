@@ -6,8 +6,9 @@
 --           fun currencies already excluded; TTL 8 days)
 --   live -> platform.bets FINAL (settled bets; sort key starts with
 --           toStartOfHour(createdAt) so the 12h filter prunes to ~12 h)
--- Grain  : one row per (game_id, window) that passes the volume gate
--- Value  : rtp_excess_pp  -> alert when > 0
+-- Grain  : one row per (game_id, window) that BREACHES (volume gate passed
+--          and RTP excl. top winner > threshold); empty result = all OK
+-- Value  : rtp_actual_pct (actual RTP in the window) -> alert when > 0
 -- Runs   : every 5 min, ~0.1-0.5 s
 -- =====================================================================
 WITH
@@ -103,17 +104,13 @@ SELECT
     source                                                                 AS game_type,
     concat(toString(window_hours), 'h')                                    AS window,
     toString(alert_threshold_pct)                                          AS threshold_pct,
-    -- ---- single numeric column = alert value (query A) ----------------
-    round(toFloat64(rtp_ex_top_pct) - alert_threshold_pct, 2)              AS rtp_excess_pp
-    -- ---- detail queries for the Slack message: duplicate this query as
-    --      B2 / C2 / D / E and replace the line above with ONE of:
-    -- round(toFloat64(rtp_raw_pct), 2)                                    AS rtp_raw_pct      -- B2
-    -- round(toFloat64(rtp_ex_top_pct), 2)                                 AS rtp_ex_top_pct   -- C2
-    -- round(toFloat64(bet_eur), 0)                                        AS bet_eur          -- D
-    -- toFloat64(players)                                                  AS players          -- E
+    -- actual (raw) RTP of the game in the window = the single numeric column (alert value)
+    round(toFloat64(rtp_raw_pct), 2)                                       AS rtp_actual_pct
 FROM scored
 WHERE bet_eur >= min_bet_eur
   AND players >= min_players
   AND actions >= min_actions
-ORDER BY rtp_excess_pp DESC
+  -- breach: RTP still above threshold after neutralising the top winner
+  AND rtp_ex_top_pct > alert_threshold_pct
+ORDER BY rtp_actual_pct DESC
 LIMIT 500

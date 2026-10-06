@@ -19,7 +19,7 @@ Covers **all games**: slots and live. Fires when a game's RTP over a rolling **4
 | High-roller suppression | `rtp_ex_top_pct` = RTP after removing the net win of the single biggest winner in the window. A single jackpot cannot trigger the alert on its own; only a broad-based spike can. |
 | Volume gate (AC2) | **Slot** 4h: bet ≥ €10k, ≥ 50 players, ≥ 5k actions · 12h: ≥ €30k, ≥ 100 players, ≥ 15k actions. **Live** 4h: bet ≥ €3k, ≥ 20 players, ≥ 300 bets · 12h: ≥ €8k, ≥ 30 players, ≥ 600 bets. Live volume is 10–50× lower than slots; with the slot gates, 4 of the 11 live games would never be evaluated. |
 | Threshold | 4h: `rtp_ex_top_pct` > **115%** (94 + 21 pp) · 12h: > **108%** (94 + 14 pp) |
-| Alert value | `rtp_excess_pp = rtp_ex_top_pct − threshold`. The rule fires when the value is above **0**. |
+| Alert value | The query returns **only the breaching (game, window) rows**, after the volume gate and with `rtp_ex_top_pct` above the threshold. The single numeric column, `rtp_actual_pct`, is the game's **actual (raw) RTP** in that window. An empty result means everything is OK. |
 
 ### Backtest (7 days, 2026-09-29 → 2026-10-06, hourly window ends)
 
@@ -33,37 +33,35 @@ Covers **all games**: slots and live. Fires when a game's RTP over a rolling **4
 Every raw spike in the period came from a single player. The remaining episodes were sustained
 over-payouts across hundreds of players, which is what this alert is meant to catch.
 
+
 ## Grafana alert rule
 
 1. **Query A:** paste `query.sql`. Datasource ProdCH, Query Type **Table**.
    - Leave out `$__timeFilter`: the windows are rolling and anchored to `now()`, not to the dashboard range.
 2. **Expression B (Reduce):** input A, function **Last**, mode **Drop non-numeric values**.
-3. **Expression C (Threshold):** input B, **IS ABOVE 0**. Set this as the alert condition.
+3. **Expression C (Threshold):** input B, **IS ABOVE 0**. Set this as the alert condition. The breach logic lives in the SQL; any returned row fires.
 4. **Evaluation:** every **5m**, pending period **15m** (3 consecutive breaches).
-5. **No data / Error handling:** No data → **OK**. Error → **Error**.
+5. **No data / Error handling:** No data → **OK** (no data is the normal state). Error → **Error**.
 6. **Labels:** `team=bi`, `alert=game_rtp_spike`. Route this label to the dedicated Slack contact point (AC3).
 
 Each game and window becomes its own alert instance, with labels `game_id`, `game_name`,
-`game_type` (`slot` / `live`), `window` and `threshold_pct`.
+`game_type` (`slot` / `live`), `window` and `threshold_pct`. Once the game's RTP falls back
+under the threshold, its row disappears from the result. Grafana marks the series as missing and
+resolves the alert, which sends a "Resolved" message to Slack.
 
-### Optional detail queries for the Slack message
-
-Grafana alerting accepts **one numeric column per query**. To show more numbers in the message,
-duplicate query A as B2–E and swap the last `SELECT` column for one of the commented
-alternatives in `query.sql`: `rtp_raw_pct`, `rtp_ex_top_pct`, `bet_eur`, `players`. Grafana
-matches these to query A by their labels.
+Grafana alerting takes **exactly one numeric column** per query, so `rtp_actual_pct` is the only
+numeric column. All other columns are strings and become stable labels.
 
 ### Slack template (summary / description)
 
 ```
 :rotating_light: RTP spike — {{ $labels.game_name }} ({{ $labels.game_id }}, {{ $labels.game_type }})
-Window: {{ $labels.window }} | Target: 94% | Alert threshold: {{ $labels.threshold_pct }}%
-RTP (excl. top winner): {{ humanize $values.C2.Value }}%  (+{{ humanize $values.A.Value }} pp over threshold)
-Raw RTP: {{ humanize $values.B2.Value }}% | Bets: €{{ humanize $values.D.Value }} | Players: {{ $values.E.Value }}
-Not explained by a single high-roller. Check math version / game config / recent releases.
+Window: last {{ $labels.window }} | Target: 94% | Alert threshold: {{ $labels.threshold_pct }}%
+Actual RTP: {{ humanize $values.B.Value }}%
+Still above threshold after excluding the biggest single winner, so not explained by one high-roller.
+Check math version / game config / recent releases.
 ```
 
-If you skip the detail queries, use only `$labels.*` and `$values.A.Value`.
 
 ## Tuning
 
