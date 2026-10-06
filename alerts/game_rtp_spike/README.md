@@ -87,6 +87,8 @@ Each game and window becomes its own alert instance, with labels `game_id`, `gam
 under the threshold, its row disappears from the result. Grafana marks the series as missing and
 resolves the alert, which sends a "Resolved" message to Slack.
 
+The query has **no `time` column**. With one, Grafana reads the table as a "long" time series and Reduce fails with `input data must be a wide series but got type long`.
+
 Grafana alerting takes **exactly one numeric column** per query, so `rtp_actual_pct` is the only
 numeric column. All other columns are strings and become stable labels.
 

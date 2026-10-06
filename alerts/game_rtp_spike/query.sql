@@ -110,7 +110,8 @@ WITH
     )
 
 SELECT
-    window_end                                                             AS time,
+    -- no time column: Grafana alerting reads a time + labels table as a "long" series,
+    -- which Reduce rejects; labels + one number is read as numeric data
     gameId                                                                 AS game_id,
     dictGetOrDefault('pulse.games_d', 'name', toString(gameId), gameId)    AS game_name,
     source                                                                 AS game_type,
