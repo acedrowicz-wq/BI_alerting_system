@@ -1,11 +1,11 @@
 -- =====================================================================
--- Alert: Game RTP spike vs 94% target (rolling 4h / 12h) — ALL games
+-- Alert: Game RTP spike vs 94% target (rolling 4h / 12h / 24h) — ALL games
 -- Source : ProdCH
 --   slot -> platform.agg_slots_ggr (15-min buckets per game / casino /
 --           player; settled real-money actions in EUR; test casinos and
 --           fun currencies already excluded; TTL 8 days)
 --   live -> platform.bets FINAL (settled bets; sort key starts with
---           toStartOfHour(createdAt) so the 12h filter prunes to ~12 h)
+--           toStartOfHour(createdAt) so the 24h filter prunes to ~24 h)
 -- Grain  : one row per (game_id, window) that BREACHES (volume gate passed
 --          and RTP excl. top winner > threshold); empty result = all OK
 -- Value  : rtp_actual_pct (actual RTP in the window) -> alert when > 0
@@ -17,21 +17,25 @@ WITH
     toStartOfFifteenMinutes(now('UTC'))          AS window_end,
     window_end - INTERVAL 4 HOUR                 AS start_4h,
     window_end - INTERVAL 12 HOUR                AS start_12h,
+    window_end - INTERVAL 24 HOUR                AS start_24h,
 
-    -- 1) per player, both windows in a single pass — slots + live
+    -- 1) per player, all three windows in a single pass — slots + live
     per_player AS
     (
         SELECT
             'slot'                                                   AS source,
             gameId, wlId, wlUserId,
-            toDecimal128(sumIf(betEur, bucket >= start_4h), 4)       AS bet_4h,
-            toDecimal128(sumIf(winEur, bucket >= start_4h), 4)       AS win_4h,
+            toDecimal128(sumIf(betEur,  bucket >= start_4h), 4)      AS bet_4h,
+            toDecimal128(sumIf(winEur,  bucket >= start_4h), 4)      AS win_4h,
             sumIf(actions, bucket >= start_4h)                       AS cnt_4h,
-            toDecimal128(sum(betEur), 4)                             AS bet_12h,
-            toDecimal128(sum(winEur), 4)                             AS win_12h,
-            sum(actions)                                             AS cnt_12h
+            toDecimal128(sumIf(betEur,  bucket >= start_12h), 4)     AS bet_12h,
+            toDecimal128(sumIf(winEur,  bucket >= start_12h), 4)     AS win_12h,
+            sumIf(actions, bucket >= start_12h)                      AS cnt_12h,
+            toDecimal128(sum(betEur), 4)                             AS bet_24h,
+            toDecimal128(sum(winEur), 4)                             AS win_24h,
+            sum(actions)                                             AS cnt_24h
         FROM platform.agg_slots_ggr
-        WHERE bucket >= start_12h
+        WHERE bucket >= start_24h
           AND bucket <  window_end
         GROUP BY gameId, wlId, wlUserId
 
@@ -40,14 +44,17 @@ WITH
         SELECT
             'live'                                                   AS source,
             gameId, wlId, wlUserId,
-            toDecimal128(sumIf(convertedBet, createdAt >= start_4h), 4) AS bet_4h,
-            toDecimal128(sumIf(convertedWin, createdAt >= start_4h), 4) AS win_4h,
-            countIf(createdAt >= start_4h)                           AS cnt_4h,
-            toDecimal128(sum(convertedBet), 4)                       AS bet_12h,
-            toDecimal128(sum(convertedWin), 4)                       AS win_12h,
-            count()                                                  AS cnt_12h
+            toDecimal128(sumIf(convertedBet, createdAt >= start_4h), 4)  AS bet_4h,
+            toDecimal128(sumIf(convertedWin, createdAt >= start_4h), 4)  AS win_4h,
+            countIf(createdAt >= start_4h)                               AS cnt_4h,
+            toDecimal128(sumIf(convertedBet, createdAt >= start_12h), 4) AS bet_12h,
+            toDecimal128(sumIf(convertedWin, createdAt >= start_12h), 4) AS win_12h,
+            countIf(createdAt >= start_12h)                              AS cnt_12h,
+            toDecimal128(sum(convertedBet), 4)                           AS bet_24h,
+            toDecimal128(sum(convertedWin), 4)                           AS win_24h,
+            count()                                                      AS cnt_24h
         FROM platform.bets FINAL
-        WHERE createdAt >= start_12h
+        WHERE createdAt >= start_24h
           AND createdAt <  window_end
           AND status IN ('FINALIZED', 'COMPLETED')
           AND dictGetOrDefault('platform.whitelabels_d', 'isTest', toString(wlId), toUInt8(0)) = 0
@@ -71,7 +78,8 @@ WITH
             greatest(max(w.3 - w.2), toDecimal128(0, 4)) AS top_player_net_win_eur
         FROM per_player
         ARRAY JOIN [ (toUInt8(4),  bet_4h,  win_4h,  cnt_4h),
-                     (toUInt8(12), bet_12h, win_12h, cnt_12h) ] AS w
+                     (toUInt8(12), bet_12h, win_12h, cnt_12h),
+                     (toUInt8(24), bet_24h, win_24h, cnt_24h) ] AS w
         GROUP BY source, gameId, window_hours
     ),
 
@@ -84,15 +92,15 @@ WITH
             -- RTP with the biggest winner neutralised (his net win removed):
             -- a single high-roller jackpot cannot trigger the alert on its own
             100 * (win_eur - top_player_net_win_eur) / bet_eur        AS rtp_ex_top_pct,
-            -- "drastically exceeds 94%": +21 pp on 4h (=115%), +14 pp on 12h (=108%)
-            target_rtp_pct + if(window_hours = 4, 21.0, 14.0)         AS alert_threshold_pct,
+            -- "drastically exceeds 94%": +21 pp on 4h (=115%), +14 pp on 12h (=108%), +11 pp on 24h (=105%)
+            target_rtp_pct + multiIf(window_hours = 4, 21.0, window_hours = 12, 14.0, 11.0) AS alert_threshold_pct,
             -- volume gate (AC2); live games have ~10-50x lower volume than slots
-            multiIf(source = 'slot', if(window_hours = 4, 10000, 30000),
-                                     if(window_hours = 4, 3000,  8000))  AS min_bet_eur,
-            multiIf(source = 'slot', if(window_hours = 4, 50,    100),
-                                     if(window_hours = 4, 20,    30))    AS min_players,
-            multiIf(source = 'slot', if(window_hours = 4, 5000,  15000),
-                                     if(window_hours = 4, 300,   600))   AS min_actions
+            if(source = 'slot', multiIf(window_hours = 4, 10000, window_hours = 12, 30000, 60000),
+                                multiIf(window_hours = 4, 3000,  window_hours = 12, 8000,  15000)) AS min_bet_eur,
+            if(source = 'slot', multiIf(window_hours = 4, 50,    window_hours = 12, 100,   200),
+                                multiIf(window_hours = 4, 20,    window_hours = 12, 30,    50))    AS min_players,
+            if(source = 'slot', multiIf(window_hours = 4, 5000,  window_hours = 12, 15000, 30000),
+                                multiIf(window_hours = 4, 300,   window_hours = 12, 600,   1200))  AS min_actions
         FROM per_game
         WHERE bet_eur > 0
     )
