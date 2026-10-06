@@ -113,6 +113,14 @@ To use per-game targets, `platform.slot_rtp_target` holds the target per game an
 The ggr rollup has no math-version column, though, so for now 94% stays the single target, as
 the Jira ticket specifies.
 
+## Grafana datasource permissions
+
+Grafana's ProdCH datasource connects as `monitor_user`, which has `SELECT` on `platform` and `pulse` but `dictGet` only on `pulse`. The query therefore avoids `platform.*_d` dictionaries:
+- test casinos and fun currencies are filtered via `platform.mysql_whitelabels` / `platform.mysql_currency` (`FINAL`, not deleted). Same sets as the dictionaries: 15 test casinos, 6 fun currencies.
+- game names come from `pulse.games_d`, which has the same source as `platform.games_d`.
+
+Alternative: an admin runs `GRANT dictGet ON platform.* TO monitor_user`.
+
 ## Performance notes
 
 - The whole query (slot + live) runs in about 0.06–0.5 s.

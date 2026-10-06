@@ -57,8 +57,12 @@ WITH
         WHERE createdAt >= start_24h
           AND createdAt <  window_end
           AND status IN ('FINALIZED', 'COMPLETED')
-          AND dictGetOrDefault('platform.whitelabels_d', 'isTest', toString(wlId), toUInt8(0)) = 0
-          AND dictGetOrDefault('platform.currency_d', 'isFun', toString(currency), toUInt8(0)) = 0
+          -- test casinos / fun currencies excluded via the dictionaries' source tables
+          -- (the Grafana user has SELECT on platform but no dictGet on platform.*_d)
+          AND wlId NOT IN (SELECT wlId FROM platform.mysql_whitelabels FINAL
+                           WHERE isTest AND _peerdb_is_deleted = 0)
+          AND currency NOT IN (SELECT symbol FROM platform.mysql_currency FINAL
+                               WHERE isFun AND _peerdb_is_deleted = 0)
           AND (isNull(freeSpins) OR freeSpins IN ('', '0'))          -- real money only
         GROUP BY gameId, wlId, wlUserId
     ),
@@ -108,7 +112,7 @@ WITH
 SELECT
     window_end                                                             AS time,
     gameId                                                                 AS game_id,
-    dictGetOrDefault('platform.games_d', 'name', toString(gameId), gameId) AS game_name,
+    dictGetOrDefault('pulse.games_d', 'name', toString(gameId), gameId)    AS game_name,
     source                                                                 AS game_type,
     concat(toString(window_hours), 'h')                                    AS window,
     toString(alert_threshold_pct)                                          AS threshold_pct,
