@@ -36,7 +36,43 @@ Every raw spike in the period came from a single player. The remaining episodes 
 over-payouts across hundreds of players, which is what this alert is meant to catch.
 
 
-## Grafana alert rule
+## Import into Grafana (recommended)
+
+`grafana/rule-group.json` holds the complete rule, generated from `query.sql`:
+- query A on ProdCH, then Reduce Last (B), then Threshold B > 0 (C);
+- evaluation every 5m, pending 15m;
+- No data → OK, Error → Error;
+- labels `team=bi`, `alert=game_rtp_spike`;
+- Slack summary and description templates;
+- direct routing to the Slack contact point.
+
+Grafana's UI cannot import Grafana-managed rules from a file, so the scripts below send one call to the provisioning API (`PUT /api/v1/provisioning/folder/<folder>/rule-groups/bi_game_rtp_spike`). They send `X-Disable-Provenance: true`, which keeps the rule editable in the UI.
+
+**You need:**
+1. **ProdCH datasource UID:** Connections → Data sources → ProdCH. It is the last segment of the URL (`/connections/datasources/edit/<uid>`).
+2. **Folder UID:** Dashboards → open the target folder. It is the segment after `/dashboards/f/` in the URL.
+3. **Slack contact point name:** Alerting → Contact points. Use the exact name.
+4. **Service account token:** Administration → Service accounts, role Editor or alert-rule write access in that folder. The script prompts for it and never stores it.
+
+**Run it from a machine that can reach Grafana (VPN / office network):**
+
+```powershell
+# Windows
+cd alerts\game_rtp_spike\grafana
+powershell -ExecutionPolicy Bypass -File .\import.ps1 -DatasourceUid <uid> -FolderUid <uid> -ContactPoint "<name>"
+```
+
+```bash
+# macOS / Linux
+cd alerts/game_rtp_spike/grafana
+./import.sh <datasource_uid> <folder_uid> "<contact point name>"
+```
+
+Both scripts refuse to run if group `bi_game_rtp_spike` already holds other rules, because a PUT replaces the whole group. Re-running them updates this rule in place.
+
+The datasource type is set to `grafana-clickhouse-datasource`, the official ClickHouse plugin. If ProdCH uses the Altinity plugin (`vertamedia-clickhouse-datasource`), tell BI to regenerate the JSON.
+
+## Grafana alert rule (manual setup)
 
 1. **Query A:** paste `query.sql`. Datasource ProdCH, Query Type **Table**.
    - Leave out `$__timeFilter`: the windows are rolling and anchored to `now()`, not to the dashboard range.
