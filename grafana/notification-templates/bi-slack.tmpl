@@ -1,0 +1,22 @@
+{{/*
+  BI Slack notification template.
+  Contact point → Slack → Optional Slack settings:
+    Title:     {{ template "bi.slack.title" . }}
+    Text Body: {{ template "bi.slack.text" . }}
+  Generic: rules with summary/description annotations are rendered from them,
+  rules without them fall back to their labels, so the contact point can be shared.
+*/}}
+
+{{ define "bi.slack.title" -}}
+{{ if eq .Status "firing" }}:rotating_light: {{ else }}:white_check_mark: RESOLVED · {{ end -}}
+{{ .CommonLabels.alertname }}{{ if gt (len .Alerts) 1 }} ({{ len .Alerts }} alerts){{ end }}
+{{- end }}
+
+{{ define "bi.slack.text" -}}
+{{ range .Alerts -}}
+{{ if eq .Status "firing" }}:red_circle:{{ else }}:large_green_circle:{{ end }} *{{ or .Annotations.summary .Labels.alertname }}*
+{{ if .Annotations.description }}{{ .Annotations.description }}{{ else }}{{ range .Labels.SortedPairs }}{{ if ne .Name "alertname" }}{{ .Name }}: `{{ .Value }}`  {{ end }}{{ end }}{{ end }}
+<{{ .GeneratorURL }}|Open rule>  ·  <{{ .SilenceURL }}|Silence>{{ if .DashboardURL }}  ·  <{{ .DashboardURL }}|Dashboard>{{ end }}
+
+{{ end -}}
+{{- end }}

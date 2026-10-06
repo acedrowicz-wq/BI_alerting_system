@@ -90,8 +90,8 @@
         "alert": "game_rtp_spike"
       },
       "annotations": {
-        "summary": "RTP spike — {{ $labels.game_name }} ({{ $labels.game_type }}, {{ $labels.window }})",
-        "description": "Game: {{ $labels.game_name }} ({{ $labels.game_id }}, {{ $labels.game_type }})\nWindow: last {{ $labels.window }} | Target: 94% | Alert threshold: {{ $labels.threshold_pct }}%\nActual RTP: {{ humanize $values.B.Value }}%\nStill above threshold after excluding the biggest single winner, so not explained by one high-roller. Check math version / game config / recent releases."
+        "summary": "RTP spike: {{ $labels.game_name }} · last {{ $labels.window }}",
+        "description": "*Game:* {{ $labels.game_name }} (`{{ $labels.game_id }}`, {{ $labels.game_type }})\n*Window:* last {{ $labels.window }}\n*Actual RTP:* {{ humanize $values.B.Value }}%  (threshold {{ $labels.threshold_pct }}%, target 94%)\n_Still above threshold after excluding the biggest single winner, so not a single high-roller._"
       },
       "notification_settings": {
         "receiver": "__SLACK_CONTACT_POINT__"
