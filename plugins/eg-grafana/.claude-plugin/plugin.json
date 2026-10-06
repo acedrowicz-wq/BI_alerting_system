@@ -1,0 +1,18 @@
+{
+  "name": "eg-grafana",
+  "version": "0.1.0",
+  "description": "EnjoyGaming Grafana (grafana.enjoygaming.live) for the BI team: read dashboards and datasources, and create / update the BI alert rules kept in BI_alerting_system (alerts/<name>/query.sql on the ProdCH ClickHouse datasource), following the team's alert conventions. Ships the official Grafana MCP server (Docker, stdio) preconfigured for the company instance; the service account token comes from GRAFANA_SERVICE_ACCOUNT_TOKEN.",
+  "author": {
+    "name": "EnjoyGaming BI"
+  },
+  "mcpServers": "./.mcp.json",
+  "keywords": [
+    "grafana",
+    "alerting",
+    "clickhouse",
+    "prodch",
+    "rtp",
+    "bi",
+    "enjoygaming"
+  ]
+}
