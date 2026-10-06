@@ -6,7 +6,7 @@ Covers **all games**: slots and live. Fires when a game's RTP over a rolling **4
 - **Datasource:** ProdCH (ClickHouse)
   - slots: `platform.agg_slots_ggr`
   - live: `platform.bets FINAL`
-- **SQL:** [`query.sql`](query.sql)
+- **SQL:** [`query.sql`](query.sql) (alert, query A) · [`query_context_24h.sql`](query_context_24h.sql) (24h RTP for the trend, query C)
 - **Evaluation:** every 5 min, pending period 15 min
 
 ## Logic
@@ -42,7 +42,9 @@ over-payouts across hundreds of players, which is what this alert is meant to ca
 3. **Expression C (Threshold):** input B, **IS ABOVE 0**. Set this as the alert condition. The breach logic lives in the SQL; any returned row fires.
 4. **Evaluation:** every **5m**, pending period **15m** (3 consecutive breaches).
 5. **No data / Error handling:** No data → **OK** (no data is the normal state). Error → **Error**.
-6. **Labels:** `team=bi`, `alert=game_rtp_spike`. Route this label to the dedicated Slack contact point (AC3).
+6. **Query C (24h context):** paste `query_context_24h.sql`, Query Type **Table**.
+7. **Expression D (Reduce):** input C, function **Last**, mode **Drop non-numeric values**. Do **not** use it in the condition; it only feeds the message.
+8. **Labels:** `team=bi`, `alert=game_rtp_spike`. Route this label to the dedicated Slack contact point (AC3).
 
 Each game and window becomes its own alert instance, with labels `game_id`, `game_name`,
 `game_type` (`slot` / `live`), `window` and `threshold_pct`. Once the game's RTP falls back
@@ -52,12 +54,17 @@ resolves the alert, which sends a "Resolved" message to Slack.
 Grafana alerting takes **exactly one numeric column** per query, so `rtp_actual_pct` is the only
 numeric column. All other columns are strings and become stable labels.
 
+The 24h RTP therefore comes from a separate query, C. It returns the same label set as A
+(`game_id`, `game_name`, `game_type`, `window`, `threshold_pct`), so Grafana matches each alert
+instance to its game's 24h RTP via `$values.D`. Comparing the window RTP with the 24h RTP shows the
+trend: a high 4h/12h value with a normal 24h value is a fresh spike; both high is a sustained problem.
+
 ### Slack template (summary / description)
 
 ```
 :rotating_light: RTP spike — {{ $labels.game_name }} ({{ $labels.game_id }}, {{ $labels.game_type }})
 Window: last {{ $labels.window }} | Target: 94% | Alert threshold: {{ $labels.threshold_pct }}%
-Actual RTP: {{ humanize $values.B.Value }}%
+Actual RTP ({{ $labels.window }}): {{ humanize $values.B.Value }}% | Last 24h: {{ humanize $values.D.Value }}%
 Still above threshold after excluding the biggest single winner, so not explained by one high-roller.
 Check math version / game config / recent releases.
 ```
