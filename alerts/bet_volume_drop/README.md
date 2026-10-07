@@ -4,8 +4,8 @@ Detects frontend, server or integration outages: a game's bet volume falls far b
 
 - **Datasource:** ProdCH (ClickHouse)
 - **SQL:**
-  - [`query.sql`](query.sql) — raw tables, works today (~1 s, ~50 M rows read).
-  - [`query_mv.sql`](query_mv.sql) — same output, reads the per-minute rollup from [`minute_table.sql`](minute_table.sql).
+  - [`query_mv.sql`](query_mv.sql) — **use this one.** Reads `bi_sandbox.bets_per_minute` (~1 M rows, ~0.4 s). The table has been live since 2026-10-07, backfilled from 2026-10-05.
+  - [`query.sql`](query.sql) — fallback on raw tables (~1 s, ~50 M rows read).
 
 ## Logic
 
@@ -32,7 +32,7 @@ Detects frontend, server or integration outages: a game's bet volume falls far b
 
 Same setup as the RTP spike alert, with these differences:
 
-1. **Query A:** `query.sql`, Table format. No `time` column.
+1. **Query A:** `query_mv.sql`, Table format. No `time` column.
 2. **B — Reduce:** Last of A, mode Drop non-numeric.
 3. **C — Threshold:** B **IS ABOVE -1**. The breach logic lives in the SQL. The value can be **0** (no bets at all), so do not use "> 0".
 4. **Evaluation group:** every 5m. **Pending period: 1h.**
@@ -64,3 +64,10 @@ _Below threshold for over 1 hour. Check frontend / game server / casino integrat
 A ClickHouse admin has to run it, because the BI and Grafana users are read-only. Then switch query A to `query_mv.sql`, which gives the same output while reading ~100× less data.
 
 The rollup keeps `wlId`, so the same table can later drive a per-casino volume alert (a single casino integration going down).
+
+### Rollup status (checked 2026-10-07)
+
+- **MV-fed minutes vs raw unique bets:** live 0% difference, slots +0.24%.
+- **Backfilled hour vs raw:** −0.6% to −0.9% (`uniq` approximation).
+- **Ingestion lag:** 0–2 min.
+- **`query_mv.sql` vs `query.sql`:** same results within 0.3 pp for big games. Small live tables differ by up to ~3 pp, because raw counts include re-inserted row versions.
