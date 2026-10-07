@@ -9,7 +9,7 @@
 
 {{ define "bi.slack.title" -}}
 {{ if eq .Status "firing" }}:rotating_light: {{ else }}:white_check_mark: RESOLVED · {{ end -}}
-{{ .CommonLabels.alertname }}{{ if gt (len .Alerts) 1 }} ({{ len .Alerts }} alerts){{ end }}
+{{ or .CommonLabels.alertname "BI alerts" }}{{ if gt (len .Alerts) 1 }} ({{ len .Alerts }} alerts){{ end }}
 {{- end }}
 
 {{ define "bi.slack.text" -}}
