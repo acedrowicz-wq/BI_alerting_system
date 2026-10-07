@@ -58,7 +58,7 @@ WITH
     (
         -- per game (a game with 0 bets now still has a baseline row, so it is caught)
         SELECT source, gameId, cur_bets, base_bets / buckets_in_24h AS baseline,
-               game_threshold_pct AS threshold_pct
+               game_threshold_pct AS thr_pct
         FROM counts
         WHERE NOT has(excluded_games, toString(gameId))
 
@@ -67,7 +67,7 @@ WITH
         -- platform total
         SELECT 'all' AS source, 'ALL_GAMES' AS gameId,
                sum(cur_bets), sum(base_bets) / buckets_in_24h,
-               total_threshold_pct
+               total_threshold_pct AS thr_pct
         FROM counts
     )
 
@@ -76,11 +76,11 @@ SELECT
     if(gameId = 'ALL_GAMES', 'All games (platform total)',
        dictGetOrDefault('pulse.games_d', 'name', toString(gameId), gameId)) AS game_name,
     source                                                                 AS game_type,
-    toString(threshold_pct)                                                AS threshold_pct,
+    toString(thr_pct)                                                      AS threshold_pct,
     -- single numeric column: bets in the last 15 min as % of the 24h average
     round(100 * cur_bets / baseline, 1)                                    AS pct_of_baseline
 FROM scored
 WHERE baseline >= min_baseline_bets
-  AND 100 * cur_bets / baseline < threshold_pct
+  AND 100 * cur_bets / baseline < thr_pct
 ORDER BY pct_of_baseline
 LIMIT 500
