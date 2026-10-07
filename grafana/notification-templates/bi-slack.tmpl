@@ -16,7 +16,7 @@
 {{ range .Alerts -}}
 {{ if eq .Status "firing" }}:red_circle:{{ else }}:large_green_circle:{{ end }} *{{ or .Annotations.summary .Labels.alertname }}*
 {{ if .Annotations.description }}{{ .Annotations.description }}{{ else }}{{ range .Labels.SortedPairs }}{{ if ne .Name "alertname" }}{{ .Name }}: `{{ .Value }}`  {{ end }}{{ end }}{{ end }}
-<{{ .GeneratorURL }}|Open rule>  ·  <{{ .SilenceURL }}|Silence>{{ if .DashboardURL }}  ·  <{{ .DashboardURL }}|Dashboard>{{ end }}
+{{ if match "^https?://" .GeneratorURL }}<{{ .GeneratorURL }}|Open rule>  ·  {{ end }}<{{ .SilenceURL }}|Silence>{{ if .DashboardURL }}  ·  <{{ .DashboardURL }}|Dashboard>{{ end }}
 
 {{ end -}}
 {{- end }}
