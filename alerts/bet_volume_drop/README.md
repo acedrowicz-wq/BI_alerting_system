@@ -30,6 +30,8 @@ Detects frontend, server or integration outages: a game's bet volume falls far b
 
 ## Grafana alert rule
 
+> **Do not use "More → Duplicate" to create these rules.** In our Grafana (v12.3) a duplicated rule loses the type of the Reduce expression B and fails with `invalid command type in expression 'B': no expression command type in query`. Create each rule with **+ New alert rule** and paste the query.
+
 Same setup as the RTP spike alert, with these differences:
 
 1. **Query A:** `query_mv.sql`, Table format. No `time` column.

@@ -20,6 +20,8 @@ Catches upstream developer errors (NULLs, empty strings, ids that do not exist i
 
 ## Grafana (same steps for each of the 6 rules)
 
+> **Do not use "More → Duplicate" to create these rules.** In our Grafana (v12.3) a duplicated rule loses the type of the Reduce expression B and fails with `invalid command type in expression 'B': no expression command type in query`. Create each rule with **+ New alert rule** and paste the query.
+
 1. **Query A:** the rule's `.sql`, datasource ProdCH, Table format.
 2. **B — Reduce:** Last of A, mode Drop non-numeric.
 3. **C — Threshold (AC2):** B **IS ABOVE 0**.
