@@ -1,12 +1,15 @@
-# NULL / missing key dimensions in the bet feed (3 alerts)
+# NULL / missing key dimensions in the bet feed (6 alerts)
 
 Catches upstream developer errors (NULLs, empty strings, ids that do not exist in reference tables) in the incoming bet feed before they reach Tableau.
 
-| Rule | SQL | Field(s) | Missing means |
+| Rule | SQL | Field | Missing means |
 |---|---|---|---|
 | Missing casino | [`casino.sql`](casino.sql) | `wlId` | empty, or not in `platform.mysql_whitelabels` (Tableau shows a NULL `casino_name`) |
 | Missing country | [`country.sql`](country.sql) | `country` | not a 2-letter uppercase ISO code (empty included) |
-| Missing other key fields | [`other_fields.sql`](other_fields.sql) | `gameId`, `currency`, `wlUserId`, EUR conversion | empty, unknown id, or stake > 0 with `convertedBet = 0` |
+| Missing game | [`game.sql`](game.sql) | `gameId` | empty, or not in `platform.mysql_games` |
+| Missing currency | [`currency.sql`](currency.sql) | `currency` | empty, or not in `platform.mysql_currency` |
+| Missing player id | [`player.sql`](player.sql) | `wlUserId` | empty |
+| Missing EUR conversion | [`eur_conversion.sql`](eur_conversion.sql) | `convertedBet` | stake > 0 but EUR amount = 0 |
 
 - **Feed:** `platform.slot_actions` (slots) and `platform.bets` (live). Test casinos are excluded.
 - **Why not `IS NULL`:** these columns are not `Nullable` in ClickHouse. PeerDB writes an upstream NULL as `''` / `0`, so "missing" is checked as empty or unknown.
@@ -15,7 +18,7 @@ Catches upstream developer errors (NULLs, empty strings, ids that do not exist i
 - **Baseline:** 7 days and ~174 M slot rows plus live, with 0 affected records. Any hit is a real error.
 - **Cost:** ~20 ms per run, ~30–90k rows read.
 
-## Grafana (same steps for each of the 3 rules)
+## Grafana (same steps for each of the 6 rules)
 
 1. **Query A:** the rule's `.sql`, datasource ProdCH, Table format.
 2. **B — Reduce:** Last of A, mode Drop non-numeric.
