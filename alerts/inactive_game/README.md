@@ -9,18 +9,32 @@ Flags games that are normally played at this time of day but had no bets and no 
 
 | AC | How |
 |---|---|
-| AC1: evaluate all active games | Every game in `platform.mysql_games` (live rows) is checked. Last-hour bets and unique players come from `platform.slot_actions` (`betSize > 0`) and `platform.bets` (live). Test casinos are excluded. |
-| AC2: exactly 0 bets and 0 players | The window is the last 60 min, ending 2 min before `now()` to cover ingestion lag. The game has `bets_1h = 0` and `players_1h = 0`. A game with no rows at all also counts as 0. |
-| AC3: filter out naturally inactive games | A game is expected to have traffic now only if it had ≥ 5 bets in the **same clock hour on every day** of the history window. The window is the last 7 days, read from `bi_sandbox.bets_per_minute`, and needs at least 2 full days. Games never played at this hour, or not played recently, are skipped. Presenter studios with scheduled but irregular breaks are excluded explicitly: `kyiv_pros_*`, `x777_roulette_*`. |
+| AC1: evaluate all active games | Every game in `platform.mysql_games` (live rows) is classified. Last-hour bets and unique players come from `platform.slot_actions` (`betSize > 0`) and `platform.bets` (live). Test casinos are excluded. |
+| AC2: exactly 0 bets and 0 players | The window is the last 60 min, ending 2 min before `now()` to cover ingestion lag. A game with no rows at all also counts as 0. |
+| AC3: filter out naturally inactive games | Each game falls into one lifecycle stage (table below). Only established games and new releases are monitored. |
 
-**Value:** `expected_bets`, the average bets in this clock hour over the history days. Only breaching games are returned, so an empty result means OK.
+| Lifecycle | Rule (from `platform.agg_daily`) | Monitored? |
+|---|---|---|
+| Pre-launch | In the catalog but never had a bet | no |
+| Retired / dead | No bets yesterday and not a new release | no |
+| Established | Bets yesterday, plus ≥ 5 bets in this **clock hour on every day** of the last 7 (min 2 full days of `bi_sandbox.bets_per_minute`) | yes |
+| New release | First bet ever within the last **7 days** (catalog `createdAt` is not used: games go live 2 days to 8 months after being added) | yes, once it had ≥ 20 bets in the 24 h before the window |
+| Presenter studios | `kyiv_pros_alex`, `kyiv_pros_julia`, `x777_roulette_*`: scheduled but irregular breaks | no (excluded explicitly) |
 
-### Checks (2026-10-08)
+**Value:** `expected_bets`, the bets normally seen in one hour. For established games it is the same-clock-hour average; for new releases it is the last-24h hourly average. Only breaching games are returned, so an empty result means OK.
 
-- **Coverage:** 46 games in the catalog. 34 are "active at this hour". 8 had no traffic and 4 are the excluded studios.
-- **Live result:** empty, because every active game had traffic. Runs in ~0.13 s and also works with `enable_analyzer = 0`.
-- **Simulation:** removing Pedro Spicy's slot traffic from the last hour returned `pedro_spicy`, with expected_bets 2142.5.
-- **History:** over ~3 days of per-minute data, the only zero-bet hours belonged to the excluded studios.
+**Labels:** `game_id`, `game_name`, `game_type`, `lifecycle` (`established` / `new release`).
+
+### Checks (2026-10-09)
+
+- **Classification of the 46 catalog games:**
+  - 34 established and monitored;
+  - 2 retired: `enchanted_forest` (last bet 2026-04-14) and `ua_branded_roulette` (last bet 2025-01-30);
+  - 6 pre-launch, never bet: `TestGameeeeee`, `eg_mark_roulette`, `kyiv_pros_kate/mary/kris/val`;
+  - 4 excluded studios;
+  - no new releases at the moment.
+- **Live result:** empty. Runs in ~1–2 s, also with `enable_analyzer = 0`.
+- **Simulation:** treating Phoenix Roulette (first bet 2026-09-22) as a new release and removing its last-hour bets returned it with expected_bets 321.2.
 
 ### Not used: `platform.mysql_gameModeHistory`
 
@@ -42,11 +56,11 @@ Create the rule with **+ New alert rule**. Do not use Duplicate, see the bet_vol
 
 Summary:
 ```
-No traffic: {{ $labels.game_name }} (0 bets, 0 players in the last hour)
+No traffic: {{ $labels.game_name }} ({{ $labels.lifecycle }}) — 0 bets, 0 players in the last hour
 ```
 Description:
 ```
-*Game:* {{ $labels.game_name }} (`{{ $labels.game_id }}`, {{ $labels.game_type }})
-*Last hour:* 0 bets, 0 players · *usually at this hour:* ~{{ humanize $values.B.Value }} bets
+*Game:* {{ $labels.game_name }} (`{{ $labels.game_id }}`, {{ $labels.game_type }}, {{ $labels.lifecycle }})
+*Last hour:* 0 bets, 0 players · *usually per hour:* ~{{ humanize $values.B.Value }} bets
 _Active game went silent. Check the lobby / frontend display and notify operators._
 ```
